@@ -70,6 +70,7 @@ class FlappyBird(gym.Env):
     def __init__(self):
         super(FlappyBird, self).__init__()
         self.action_space = spaces.Discrete(2)
+        # FB Finn: Still doubting if saving the previous actions will help in the observation space. I think it might be better to remove it.
         self.prev_actions = deque(maxlen=10)
         self.start_time = time.time()  # Initialize start time
 
@@ -90,6 +91,7 @@ class FlappyBird(gym.Env):
         self.observation_space = spaces.Box(low=0, high=255,
                                             shape=(6 + len(self.prev_actions),), dtype=np.int32)
 
+        # FB Finn: Self.reset() I believe is called by default when the environment is created. You can remove this line.
         self.reset()
 
         screen.blit(BACKGROUND, (0, 0))
@@ -124,6 +126,7 @@ class FlappyBird(gym.Env):
         if min_distance_to_pipe == float("inf"):
             min_distance_to_pipe = SCREEN_WIDTH
 
+        # FB Finn: I think this comment can be better haha
         # Calculate gap between pipes
         # I really don't know how l0l,
         # so this is created by chatGPT,
@@ -140,6 +143,7 @@ class FlappyBird(gym.Env):
         # observation
         # combining all observations in one
         # :D
+        # FB Finn: The velocity, floor and ceiling are constant values. You should remove them from the observation space. The observation space should only contain the variables that change over time. I'm not sure if bird_x changes over time, but if it does not change, you should remove it as well.
         observation = np.array([min_distance_to_pipe, self.pipe_lower_y, self.pipe_top_y, bird_x, bird_y, bird_velocity,
                                 floor, ceiling])
 
@@ -155,12 +159,14 @@ class FlappyBird(gym.Env):
         obs = self._get_observation()
         reward = self.reward_value()
         self.render()
+        # FB Finn: These two variables should be local.
         self.terminated = False
         self.truncated = False
         info = {}
         # Store every action
         # Using deque to create a list with a max of 10
         # Deque inside in __init__
+        # FB Finn: If you decide to remove the previous actions from the observation space, you should remove this line as well.
         self.prev_actions.append(action)
 
         self.bird.begin()
@@ -168,17 +174,19 @@ class FlappyBird(gym.Env):
         self.ground_group.update()
         self.pipe_group.update()
 
+        # FB Finn: Do definitely NOT implement the exploration vs exploitation logic here. This should be done in the agent.py file. When you implement this logic here, the agent thinks that it chooses an action, but then this action is overridden by a random action. This is not how it should work. The agent should choose an action, and then the environment should execute this action. The environment should not change the action chosen by the agent. The agent can however be set to choose a random action with a certain probability, but this should be done in the agent.py file.
         if np.random.rand() < self.epsilon:
             action = self.action_space.sample()  # Random action
         else:
             self.epsilon = max(self.epsilon * epsilon_decay, min_epsilon)
 
+        # FB Finn: Add a comment here to explain what the if statements are doing
         if action == 1:
             reward -= 100
             self.bird.bump()
             pygame.mixer.music.load(wing)
             pygame.mixer.music.play()
-
+        # FB Finn: It does not make sense to always give a penalty for both not flapping and flapping. You should choose to give a penalty for one of the actions.
         if action == 0:
             reward -= 50
         # Keep adding pipes on screen
@@ -204,6 +212,7 @@ class FlappyBird(gym.Env):
     ####################################################
 
     def reset(self, seed=None, options=None):
+        # FB Finn: These two variables should be local.
         self.truncated = False
         self.terminated = False
 
@@ -223,6 +232,7 @@ class FlappyBird(gym.Env):
 
         self.render()  # Render after adding pipes and ground
 
+        # FB Finn: This variable should be local.
         self.info = {}  # Moved outside the loop
         return self._get_observation(), self.info
 
@@ -278,6 +288,7 @@ class FlappyBird(gym.Env):
             self.terminated = True
             self.truncated = True
 
+        # FB Finn: This is a good idea, maybe you can make the penalty relative to the distance to the ceiling and ground. For example, if the bird is very close to the ceiling, the penalty should be higher than if the bird is far away from the ceiling.
         # dangerous close to ceiling
         if self.bird.rect.bottom > SCREEN_HEIGHT - GROUND_HEIGHT - 50:
             reward -= 500
@@ -307,6 +318,7 @@ class FlappyBird(gym.Env):
 
         if self.terminated:
             self.reset()
+        # FB Finn: Is the printing still necessary?
         print(reward)
         return reward
 
@@ -317,6 +329,7 @@ class FlappyBird(gym.Env):
 # In game classes
 # Bird(), Ground(), Pipes()
 ##############################
+# FB Finn: I did not check these, because I assume you copied those from the internet (which of course is fine). I will check them if you want me to.
 class Bird(pygame.sprite.Sprite):
 
     def __init__(self):
