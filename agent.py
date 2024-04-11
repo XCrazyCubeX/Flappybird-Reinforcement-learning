@@ -33,6 +33,8 @@ def train_model(best_model):
     for i in range(1, 10000000000):
         # Initialize PPO model
         #model = A2C("MlpPolicy", env, verbose=1, tensorboard_log=log_dir, device=device)
+
+        # Initialize A2C model
         model = A2C.load(f"{models_dir}/{count}", env, verbose=1, device=device, tensorboard_log=log_dir)
         # Train the model
         model.learn(total_timesteps=total_steps, reset_num_timesteps=False, tb_log_name="PPO")
