@@ -47,12 +47,8 @@ BACKGROUND = pygame.image.load('assets/sprites/background-night.png')
 BACKGROUND = pygame.transform.scale(BACKGROUND, (SCREEN_WIDTH, SCREEN_HEIGHT))
 BEGIN_IMAGE = pygame.image.load('assets/sprites/message.png').convert_alpha()
 
-wing = 'assets/audio/wing.wav'
-hit = 'assets/audio/hit.wav'
-
-initial_epsilon = 0.9  # Initial exploration rate
-min_epsilon = 0.3  # Minimum exploration rate
-epsilon_decay = 0.995  # Exploration rate decay factor
+# wing = 'assets/audio/wing.wav'
+# hit = 'assets/audio/hit.wav'
 
 ##########################
 # Flappy bird Environment
@@ -70,27 +66,22 @@ class FlappyBird(gym.Env):
     def __init__(self):
         super(FlappyBird, self).__init__()
         self.action_space = spaces.Discrete(2)
-        self.prev_actions = deque(maxlen=10)
+        self.prev_actions = deque(maxlen=10)  # To remove start screen after 1 action
         self.start_time = time.time()  # Initialize start time
 
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.clock = pygame.time.Clock()
         self.bird = Bird()
-
         self.pipe_group = pygame.sprite.Group()
 
-        self.pipe_gap = None
         self.pipe_lower_y = None
         self.pipe_top_y = None
         self.pipes_passed = 0  # Track the number of pipes passed
 
         self.ground_group = pygame.sprite.Group()
-        self.epsilon = initial_epsilon
 
         self.observation_space = spaces.Box(low=0, high=255,
-                                            shape=(6 + len(self.prev_actions),), dtype=np.int32)
-
-        self.reset()
+                                            shape=(4,), dtype=np.int32)
 
         screen.blit(BACKGROUND, (0, 0))
         screen.blit(BEGIN_IMAGE, (120, 150))
@@ -109,7 +100,7 @@ class FlappyBird(gym.Env):
         # bird_x
         bird_x = self.bird.rect[0]
         bird_y = self.bird.rect[1]
-        bird_velocity = self.bird.speed
+        velocity = self.bird.speed
 
         # Current distance to pipe
         # Using the first pipe of the group
@@ -125,7 +116,7 @@ class FlappyBird(gym.Env):
             min_distance_to_pipe = SCREEN_WIDTH
 
         # Calculate gap between pipes
-        # I really don't know how l0l,
+        # I really don't know how,
         # so this is created by chatGPT,
         # I do know, calculate vertical distance between upper and lower pipe
 
@@ -135,13 +126,33 @@ class FlappyBird(gym.Env):
             self.pipe_top_y = upper_pipe.rect[1] + upper_pipe.rect[3]
             self.pipe_lower_y = lower_pipe.rect[1]
 
+        v_distance_lower_y = self.pipe_lower_y - self.bird.rect.bottom
+
+        # calculate y distance to center gap
+        # first calculate center y of 2 pipes
+        # then pipe y - bird_y
+        lower_pipe_bottom_y = self.pipe_group.sprites()[0].rect.bottom
+        upper_pipe_top_y = self.pipe_group.sprites()[1].rect.top
+        pipe_gap_middle_y = (lower_pipe_bottom_y + upper_pipe_top_y) / 2
+
+        y_distance_to_gap = pipe_gap_middle_y - bird_y
+
+        # calculate x distance to center gap
+        # first calculate center x of pipe
+        # then pipe x - bird_x
+        left_pipe_right_x = self.pipe_group.sprites()[0].rect.right
+        right_pipe_left_x = self.pipe_group.sprites()[1].rect.left
+        pipe_gap_middle_x = (left_pipe_right_x + right_pipe_left_x) / 2
+
+        x_distance_to_gap = pipe_gap_middle_x - bird_x
+
         ceiling = 0
         floor = SCREEN_HEIGHT - GROUND_HEIGHT
         # observation
         # combining all observations in one
         # :D
-        observation = np.array([min_distance_to_pipe, self.pipe_lower_y, self.pipe_top_y, bird_x, bird_y, bird_velocity,
-                                floor, ceiling])
+        observation = np.array([v_distance_lower_y, velocity,
+                                y_distance_to_gap, x_distance_to_gap])
 
         return observation.shape
 
@@ -152,35 +163,40 @@ class FlappyBird(gym.Env):
     # Frame by frame
     ############################################
     def step(self, action):
-        obs = self._get_observation()
-        reward = self.reward_value()
         self.render()
-        self.terminated = False
-        self.truncated = False
+        obs = self._get_observation()
+
+        # Get everything from the reward value
+        # Even dead
+        # If terminated and truncated == True
+        # reset will happen
+        reward, terminated, truncated = self.reward_value()
         info = {}
+
         # Store every action
         # Using deque to create a list with a max of 10
         # Deque inside in __init__
         self.prev_actions.append(action)
 
+        # load in ground, pipes, and bird
+        # mechanics etc,
         self.bird.begin()
         self.bird.update()
         self.ground_group.update()
         self.pipe_group.update()
 
-        if np.random.rand() < self.epsilon:
-            action = self.action_space.sample()  # Random action
-        else:
-            self.epsilon = max(self.epsilon * epsilon_decay, min_epsilon)
-
+        # If agent chooses 1 instead of 0
+        # This to prevent spamming 1
+        # also loads in the sound effect
         if action == 1:
-            reward -= 100
             self.bird.bump()
-            pygame.mixer.music.load(wing)
-            pygame.mixer.music.play()
+            # pygame.mixer.music.load(wing)
+            # pygame.mixer.music.play()
 
-        if action == 0:
-            reward -= 50
+        # The bird will gain +1  reward for every action
+        # encouraging him to stay alive
+        if action:
+            reward += 1
         # Keep adding pipes on screen
         # Don't understand this logic.. YET
         if self._is_off_screen(self.pipe_group.sprites()[0]):
@@ -195,7 +211,7 @@ class FlappyBird(gym.Env):
             new_ground = Ground(self.ground_group.sprites()[-1].rect.right)
             self.ground_group.add(new_ground)
 
-        return obs, reward, self.truncated, self.terminated, info
+        return obs, reward, terminated, truncated, info
 
     ####################################################
     # Reset function
@@ -204,9 +220,12 @@ class FlappyBird(gym.Env):
     ####################################################
 
     def reset(self, seed=None, options=None):
-        self.truncated = False
-        self.terminated = False
 
+        reward = 0
+        truncated = False
+        terminated = False
+
+        self.info = {}
         self.prev_actions.clear()
         self.bird = Bird()
         self.pipe_group = pygame.sprite.Group()
@@ -221,9 +240,6 @@ class FlappyBird(gym.Env):
             self.pipe_group.add(pipes[0])
             self.pipe_group.add(pipes[1])
 
-        self.render()  # Render after adding pipes and ground
-
-        self.info = {}  # Moved outside the loop
         return self._get_observation(), self.info
 
     ##################################
@@ -232,6 +248,7 @@ class FlappyBird(gym.Env):
     ##################################
 
     def render(self, mode='human'):
+
         self.screen.fill((255, 255, 255))
         self.screen.blit(BACKGROUND, (0, 0))
 
@@ -256,62 +273,57 @@ class FlappyBird(gym.Env):
     def reward_value(self):
         reward = 0
 
-        current_time = time.time()
-        time_elapsed = current_time - self.start_time
+        terminated = False
+        truncated = False
 
         # collision with pipes
+        # dead
         if pygame.sprite.spritecollideany(self.bird, self.pipe_group, pygame.sprite.collide_mask):
-            reward -= 1500
-            self.terminated = True
-            self.truncated = True
+            reward -= 1000
+            terminated = True
+            truncated = True
 
-        # collision with ceiling and ground
+        # collision with top and bottom ( frame )
         # top
+        # this also means dead
         if self.bird.rect.top <= 0:
-            reward -= 5000
-            self.terminated = True
-            self.truncated = True
+            reward -= 1000
+            terminated = True
+            truncated = True
 
         # bottom
+        # and this too means dead
         if self.bird.rect.bottom >= SCREEN_HEIGHT - GROUND_HEIGHT:
-            reward -= 5000
-            self.terminated = True
-            self.truncated = True
-
-        # dangerous close to ceiling
-        if self.bird.rect.bottom > SCREEN_HEIGHT - GROUND_HEIGHT - 50:
-            reward -= 500
-
-        # dangerous close to ground
-        if self.bird.rect.top < 50:
-            reward -= 500
+            reward -= 1000
+            terminated = True
+            truncated = True
 
         # reward or penalty based on distance (y) to gap
+        # if bird goes a higher than top pipe
+        # Reward -= distance
         if self.bird.rect.top < self.pipe_top_y:
-            reward += 150 - (self.pipe_top_y - self.bird.rect.top)
-        elif self.bird.rect.bottom > self.pipe_lower_y:
-            reward += 150 - (self.bird.rect.bottom - self.pipe_lower_y)
+            reward -= (self.pipe_top_y - self.bird.rect.bottom)
 
-        elif self.bird.rect.top > self.pipe_top_y and self.bird.rect.bottom < self.pipe_lower_y:
-            reward += 300
+        # if bird goes lower than lower pipe
+        if self.bird.rect.bottom > self.pipe_lower_y:
+            reward -= (self.bird.rect.bottom - self.pipe_lower_y)
 
-        # reward every second passed
-        reward += 5 * int(time_elapsed)
-        self.start_time = current_time
+        # if bird is between the gap
+        if self.bird.rect.top > self.pipe_top_y and self.bird.rect.bottom < self.pipe_lower_y:
+            reward += 5
 
-        # passed pipe
+        # if bird passed a pipe
+        # the bird will be given a reward of + 1000
         for pipe in self.pipe_group:
             if pipe.rect.right < self.bird.rect.left:
                 self.pipes_passed += 1
-                reward += 2000
+                reward += 20
 
-        if self.terminated:
-            self.reset()
-        print(reward)
-        return reward
+        return reward, terminated, truncated
 
     def _is_off_screen(self, sprite):
         return sprite.rect[0] < -(sprite.rect[2])
+
 
 ##############################
 # In game classes
