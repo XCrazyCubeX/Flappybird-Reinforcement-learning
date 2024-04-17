@@ -5,7 +5,7 @@ I took the assets from https://github.com/zhaolingzhi/FlapPyBird-master | Credit
 
 ## Current state 
 
-https://github.com/LeonMarqs/Flappy-bird-python/blob/master/Screenshot_1.png
+![](https://github.com/LeonMarqs/Flappy-bird-python/blob/master/Screenshot_1.png)
 
 ## Install  dependencies
 You can install all dependencies with requirements.txt
