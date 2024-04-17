@@ -5,7 +5,7 @@ I took the assets from https://github.com/zhaolingzhi/FlapPyBird-master | Credit
 
 ## Current state 
 
-![](https://github.com/LeonMarqs/Flappy-bird-python/blob/master/Screenshot_1.png)
+https://github.com/LeonMarqs/Flappy-bird-python/blob/master/Screenshot_1.png
 
 ## Install  dependencies
 You can install all dependencies with requirements.txt
@@ -30,11 +30,14 @@ Run agent.py and the terminal will ask you for the best process and model.
 
 
 If no models exist it will start training a new model.
+u can use "count" variable to define how many models exists in each process. 
 
 The models are found inside the models folder.
 like this:
 
 process_0_model_0
+
+model 0 does NOT mean no models. It just counts from 0
 
 ## play game using the trained agent
 
