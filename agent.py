@@ -14,7 +14,7 @@ log_dir = f"logs/PPO3"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def train_model(process_num):
+def train_model(process_num, best_process, best_model):
 
     # Create directories if they don't exist
     # Directory models_dir
@@ -35,21 +35,16 @@ def train_model(process_num):
 
     # Define how many models already exist
     # This will make the program keep going with newest model
-    count = 1
+    count = 130
 
     # Create log dir for each process
     log_dir_process = os.path.join(log_dir, f"process_{process_num}")
-
-    # define which process and model are the best performing
-    # see tensorboard graph to see which performs best
-    best_process = 7
-    best_model = 0
 
     # Training loop just leave it be
     # Makes sure the training goes on continuously
     while True:
 
-        # create new model if no models exist
+        # create new model if no models exist`
         # if count == 0
         if count == 0:
             model = PPO("MlpPolicy",
@@ -71,7 +66,7 @@ def train_model(process_num):
 
             print(f"Loading model {models_dir}/process_{best_process}_model_{best_model}")
 
-            count += 1
+        count += 1
 
         # Make it save the model
         # When you shut down the program
@@ -98,6 +93,12 @@ def train_model(process_num):
 
 
 if __name__ == "__main__":
+
+    # define which process and model are the best performing
+    # see tensorboard graph to see which performs best
+    best_process = (input("Please select best performing process: "))
+    best_model = (input("please select best performing model: "))
+
     # Number of processes you want to run
     # Be careful, higher numbers means, -
     # Higher GPU load
@@ -106,7 +107,7 @@ if __name__ == "__main__":
     # Create and start processes
     processes = []
     for i in range(num_processes):
-        process = Process(target=train_model, args=(i,))
+        process = Process(target=train_model, args=(i, best_process, best_model))
         processes.append(process)
         process.start()
 
