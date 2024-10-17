@@ -26,7 +26,7 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 # Velocity and physics
 SPEED = 20
 GRAVITY = 2.5
-GAME_SPEED = 20
+GAME_SPEED = 13
 
 # Ground
 GROUND_WIDTH = SCREEN_WIDTH
@@ -63,7 +63,7 @@ point = 'assets/audio/point.wav'
 ##########################
 
 class FlappyBird(gym.Env):
-    metadata = {'render.modes': ['human']}
+    metadata = {'render.modes': ['human'], "render_fps": 60}
 
     # Initialize flappy bird game, make sure all self values exist
     # Here we also define our observation space and action space
@@ -284,7 +284,7 @@ class FlappyBird(gym.Env):
 
         # Set game ticks per second
         pygame.display.update()
-        self.clock.tick(50)  # Adjust FPS as needed
+        self.clock.tick(100)  # Adjust FPS as needed
 
     def draw_score(self):
         # Convert score to string
