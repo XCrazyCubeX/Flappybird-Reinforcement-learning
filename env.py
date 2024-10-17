@@ -194,29 +194,22 @@ class FlappyBird(gym.Env):
         obs = self._get_observation()
 
         # Get everything from the reward value
-        # If terminated and truncated == True
-        # Reset will happen
         reward, terminated, truncated = self.reward_value()
         info = {}
 
         # Store every action
-        # Using deque to create a list with a max of 10
-        # Deque inside in __init__
         self.prev_actions.append(action)
 
         # Load in ground, pipes, and bird
-        # Mechanics, etc.
         self.bird.begin()
         self.bird.update()
         self.ground_group.update()
         self.pipe_group.update()
 
         # If agent chooses 1 instead of 0
-        # This to prevent spamming 1
-        # Also loads in the sound effect
         if action == 1:
-            self.bird.bump()
-            # No need to load or play sounds here
+            print("Action 1 detected: Flap")  # Debugging line
+            self.bird.bump()  # This plays the wing sound
 
         # Keep adding pipes on screen
         if self.pipe_group and self._is_off_screen(self.pipe_group.sprites()[0]):
@@ -334,6 +327,7 @@ class FlappyBird(gym.Env):
             terminated = True
             truncated = True
             self.hit_sound.play()  # Play hit sound
+            print("Hit sound played")  # Debugging line
             return reward, terminated, truncated
 
         # Small positive reward for each timestep the bird is alive
@@ -345,6 +339,7 @@ class FlappyBird(gym.Env):
                 setattr(pipe, 'passed', True)
                 reward += 10  # Reward for passing a pipe pair
                 self.point_sound.play()  # Play point sound
+                print("Point sound played")  # Debugging line
                 self.pipes_passed += 1  # Increment the score
 
                 # Increase rewards for passing pipes after a certain number
@@ -443,11 +438,11 @@ class Bird(pygame.sprite.Sprite):
         """
         if self.speed < 0:
             # Flapping upwards
-            self.angle = self.max_up_angle
+            self.angle = self.max_down_angle
         elif self.speed > 0:
             # Falling downwards
             # The faster the bird is falling, the more it tilts down
-            self.angle = min(self.max_down_angle, self.speed * 2.5)  # Adjust the multiplier as needed
+            self.angle = min(self.max_up_angle, self.speed * 2.5)  # Adjust the multiplier as needed
         else:
             self.angle = 0
 
@@ -464,6 +459,7 @@ class Bird(pygame.sprite.Sprite):
     def bump(self):
         self.speed = -SPEED
         # Play wing sound
+        print("Flap sound played")  # Debugging line
         self.wing_sound.play()
         # Optionally, set a specific tilt angle when flapping
         self.angle = self.max_up_angle
