@@ -43,15 +43,14 @@ HEIGHT = SCREEN_HEIGHT
 WIDTH = SCREEN_WIDTH
 
 # Background image
-BACKGROUND = pygame.image.load('assets/sprites/background-night.png')
+BACKGROUND = pygame.image.load('assets/sprites/background-day.png')
 BACKGROUND = pygame.transform.scale(BACKGROUND, (SCREEN_WIDTH, SCREEN_HEIGHT))
 BEGIN_IMAGE = pygame.image.load('assets/sprites/message.png').convert_alpha()
 
-# Audio for wing and dead
-# Leave commented when training
-
-# wing = 'assets/audio/wing.wav'
-# hit = 'assets/audio/hit.wav'
+# Audio for wing, dead, and point
+wing = 'assets/audio/wing.wav'
+hit = 'assets/audio/hit.wav'
+point = 'assets/audio/point.wav'
 
 ##########################
 # Flappy Bird Environment
@@ -73,10 +72,7 @@ class FlappyBird(gym.Env):
         super(FlappyBird, self).__init__()
 
         # Define action space
-        # 2 actions ==
-        # Flap [1]
-        # Not flap [0]
-        self.action_space = spaces.Discrete(2)
+        self.action_space = spaces.Discrete(2)  # Flap [1], Not flap [0]
 
         # Previous actions
         self.prev_actions = deque(maxlen=10)
@@ -84,44 +80,47 @@ class FlappyBird(gym.Env):
         # Initialize time
         self.start_time = time.time()
 
-        # Set screen, clock, bird, and pipe
+        # Initialize mixer and load sounds
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+        pygame.mixer.set_num_channels(8)  # Adjust based on your needs
+
+        self.wing_sound = pygame.mixer.Sound(wing)
+        self.hit_sound = pygame.mixer.Sound(hit)
+        self.point_sound = pygame.mixer.Sound(point)
+
+        # Optional: Set volume for each sound
+        self.wing_sound.set_volume(0.5)  # Range: 0.0 to 1.0
+        self.hit_sound.set_volume(0.5)
+        self.point_sound.set_volume(0.5)
+
+        # Set screen, clock, bird, and pipe with configurable FPS
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.clock = pygame.time.Clock()
-        self.bird = Bird()
+        self.bird = Bird(self.wing_sound)  # Pass wing_sound to Bird
         self.pipe_group = pygame.sprite.Group()
 
-        # Bottom of top pipe
-        # And
-        # Top of bottom pipe
+        # Pipes positions
         self.pipe_lower_y = None
         self.pipe_top_y = None
 
-        # Vertical distance to lower pipe
-        # And
-        # Horizontal distance to center of the gap
+        # Distances
         self.v_distance_lower_y = None
         self.x_distance_to_gap = None
 
-        # How many pipes have passed.
-        # Start with 0
-        self.pipes_passed = 0  # Track the number of pipes passed
+        # Pipes passed
+        self.pipes_passed = 0
 
+        # Ground group
         self.ground_group = pygame.sprite.Group()
 
-        # Set observation space
-        # Shape would be 5 because there are 5 observations now
-        # Distance to ceiling
-        # Distance to floor,
-        # Vertical distance to lower pipe
-        # Horizontal distance to center of the gap
-        # And
-        # Velocity
+        # Observation space
         self.observation_space = spaces.Box(low=0, high=255,
                                             shape=(5,), dtype=np.int32)
 
         # Load number images 0.png to 9.png
         self.number_images = [pygame.image.load(f'assets/sprites/{i}.png').convert_alpha() for i in range(10)]
 
+        # Load background and begin images
         screen.blit(BACKGROUND, (0, 0))
         screen.blit(BEGIN_IMAGE, (120, 150))
 
@@ -217,18 +216,17 @@ class FlappyBird(gym.Env):
         # Also loads in the sound effect
         if action == 1:
             self.bird.bump()
-            # pygame.mixer.music.load(wing)
-            # pygame.mixer.music.play()
+            # No need to load or play sounds here
 
         # Keep adding pipes on screen
-        if self._is_off_screen(self.pipe_group.sprites()[0]):
+        if self.pipe_group and self._is_off_screen(self.pipe_group.sprites()[0]):
             self.pipe_group.remove(self.pipe_group.sprites()[0])
             self.pipe_group.remove(self.pipe_group.sprites()[0])
             pipes = get_random_pipes(SCREEN_WIDTH * 2)
             self.pipe_group.add(pipes[0])
             self.pipe_group.add(pipes[1])
 
-        if self._is_off_screen(self.ground_group.sprites()[0]):
+        if self.ground_group and self._is_off_screen(self.ground_group.sprites()[0]):
             self.ground_group.remove(self.ground_group.sprites()[0])
             new_ground = Ground(self.ground_group.sprites()[-1].rect.right)
             self.ground_group.add(new_ground)
@@ -252,7 +250,7 @@ class FlappyBird(gym.Env):
 
         self.info = {}
         self.prev_actions.clear()
-        self.bird = Bird()
+        self.bird = Bird(self.wing_sound)  # Pass wing_sound to Bird
         self.pipe_group = pygame.sprite.Group()
         self.ground_group = pygame.sprite.Group()
         self.pipes_passed = 0  # Reset the score
@@ -293,7 +291,7 @@ class FlappyBird(gym.Env):
 
         # Set game ticks per second
         pygame.display.update()
-        self.clock.tick(1000)
+        self.clock.tick(50)  # Adjust FPS as needed
 
     def draw_score(self):
         # Convert score to string
@@ -335,70 +333,31 @@ class FlappyBird(gym.Env):
             reward -= 100  # Large negative reward upon death
             terminated = True
             truncated = True
+            self.hit_sound.play()  # Play hit sound
             return reward, terminated, truncated
 
         # Small positive reward for each timestep the bird is alive
-        reward += 0.5
-
-        # Get the next pipes (upper and lower)
-        next_pipes = [pipe for pipe in self.pipe_group if pipe.rect.right >= self.bird.rect.left]
-        if next_pipes:
-            next_pipe = min(next_pipes, key=lambda p: p.rect.right)
-            # Get the pair of pipes (upper and lower) at the same x position
-            pipes = [pipe for pipe in self.pipe_group if pipe.rect.x == next_pipe.rect.x]
-            upper_pipes = [pipe for pipe in pipes if pipe.inverted]
-            lower_pipes = [pipe for pipe in pipes if not pipe.inverted]
-
-            # Ensure both pipes are found
-            if upper_pipes and lower_pipes:
-                upper_pipe = upper_pipes[0]
-                lower_pipe = lower_pipes[0]
-
-                # Compute center of the gap
-                gap_y = (upper_pipe.rect.bottom + lower_pipe.rect.top) / 2
-
-                # Compute vertical distance to gap center
-                bird_y = self.bird.rect.centery
-                vertical_distance = abs(bird_y - gap_y)
-
-                # Normalize the vertical distance
-                normalized_distance = vertical_distance / (PIPE_GAP / 2)
-
-                # Penalize based on distance to gap center (closer is better)
-                reward -= normalized_distance * 0.5  # Increased penalty for being far from center
-
-                # Encourage the bird to align with the gap
-                if normalized_distance < 0.1:
-                    reward += 2.5  # Bonus reward for good alignment
-            else:
-                # Handle the case where pipes are missing
-                reward -= 0.1  # Small penalty for missing pipe
-        else:
-            # Handle the case where there are no next pipes
-            reward -= 0.1  # Small penalty for no pipes ahead
-
-        # Penalize unnecessary flapping
-        if len(self.prev_actions) > 0 and self.prev_actions[-1] == 1:
-            reward -= 0.05  # Small penalty for flapping
+        reward += 1
 
         # Reward for passing a pipe pair
         for pipe in self.pipe_group:
             if not pipe.inverted and not hasattr(pipe, 'passed') and pipe.rect.right < self.bird.rect.left:
                 setattr(pipe, 'passed', True)
                 reward += 10  # Reward for passing a pipe pair
+                self.point_sound.play()  # Play point sound
                 self.pipes_passed += 1  # Increment the score
 
-        return reward, terminated, truncated
+                # Increase rewards for passing pipes after a certain number
+                if self.pipes_passed > 100:
+                    reward += 20  # Higher reward after 100 pipes passed
+                elif self.pipes_passed > 50:
+                    reward += 15  # Increased reward after 50 pipes passed
+                else:
+                    reward += 10  # Normal reward for passing pipes early on
 
-        # Small positive reward for each timestep the bird is alive
-        reward = 1
-
-        # Reward for passing a pipe pair
-        for pipe in self.pipe_group:
-            if not pipe.inverted and not hasattr(pipe, 'passed') and pipe.rect.right < self.bird.rect.left:
-                setattr(pipe, 'passed', True)
-                reward += 10  # Significant reward for passing a pipe
-                self.pipes_passed += 1  # Increment the score
+        # Penalize unnecessary flapping
+        if len(self.prev_actions) > 0 and self.prev_actions[-1] == 1:
+            reward -= 0.05  # Small penalty for flapping
 
         return reward, terminated, truncated
 
@@ -409,44 +368,117 @@ class FlappyBird(gym.Env):
 # In-game classes
 # Bird(), Ground(), Pipes()
 ##############################
+import pygame
+import random
+
 class Bird(pygame.sprite.Sprite):
 
-    def __init__(self):
+    def __init__(self, wing_sound):
         pygame.sprite.Sprite.__init__(self)
 
-        self.images = [pygame.image.load('assets/sprites/bluebird-upflap.png').convert_alpha(),
-                       pygame.image.load('assets/sprites/bluebird-midflap.png').convert_alpha(),
-                       pygame.image.load('assets/sprites/bluebird-downflap.png').convert_alpha()]
+        # Store the wing sound
+        self.wing_sound = wing_sound
+
+        # Load images for each color
+        self.blue_images = [
+            pygame.image.load('assets/sprites/bluebird-upflap.png').convert_alpha(),
+            pygame.image.load('assets/sprites/bluebird-midflap.png').convert_alpha(),
+            pygame.image.load('assets/sprites/bluebird-downflap.png').convert_alpha()
+        ]
+
+        self.yellow_images = [
+            pygame.image.load('assets/sprites/yellowbird-upflap.png').convert_alpha(),
+            pygame.image.load('assets/sprites/yellowbird-midflap.png').convert_alpha(),
+            pygame.image.load('assets/sprites/yellowbird-downflap.png').convert_alpha()
+        ]
+
+        self.red_images = [
+            pygame.image.load('assets/sprites/redbird-upflap.png').convert_alpha(),
+            pygame.image.load('assets/sprites/redbird-midflap.png').convert_alpha(),
+            pygame.image.load('assets/sprites/redbird-downflap.png').convert_alpha()
+        ]
+
+        # Randomly choose a color
+        self.color = random.choice(['blue', 'yellow', 'red'])
+
+        if self.color == 'blue':
+            self.original_images = self.blue_images
+        elif self.color == 'yellow':
+            self.original_images = self.yellow_images
+        elif self.color == 'red':
+            self.original_images = self.red_images
 
         self.speed = SPEED
 
         self.current_image = 0
-        self.image = pygame.image.load('assets/sprites/bluebird-upflap.png').convert_alpha()
+        self.image = self.original_images[self.current_image]
         self.mask = pygame.mask.from_surface(self.image)
 
         self.rect = self.image.get_rect()
         self.rect[0] = SCREEN_WIDTH / 6
         self.rect[1] = SCREEN_HEIGHT / 2
 
+        # Rotation angle
+        self.angle = 0
+        self.max_up_angle = -25  # Max tilt up
+        self.max_down_angle = 25  # Max tilt down
+
     def update(self):
-        self.current_image = (self.current_image + 1) % 3
-        self.image = self.images[self.current_image]
+        # Update animation
+        self.current_image = (self.current_image + 1) % len(self.original_images)
+        self.image = self.original_images[self.current_image]
+
+        # Update speed with gravity
         self.speed += GRAVITY
 
-        # Update bird's position based on speed
+        # Update bird's vertical position
         self.rect[1] += self.speed
 
-        # Ensure bird doesn't go below ground level
-        if self.rect.bottom >= SCREEN_HEIGHT - GROUND_HEIGHT:
-            self.rect.bottom = SCREEN_HEIGHT - GROUND_HEIGHT
-            self.speed = 0  # Stop the bird from falling further
+        # Calculate tilt angle
+        self.calculate_tilt()
+
+    def calculate_tilt(self):
+        """
+        Calculate the tilt angle based on the bird's vertical speed.
+        """
+        if self.speed < 0:
+            # Flapping upwards
+            self.angle = self.max_up_angle
+        elif self.speed > 0:
+            # Falling downwards
+            # The faster the bird is falling, the more it tilts down
+            self.angle = min(self.max_down_angle, self.speed * 2.5)  # Adjust the multiplier as needed
+        else:
+            self.angle = 0
+
+        # Rotate the image
+        rotated_image = pygame.transform.rotate(self.original_images[self.current_image], self.angle)
+        old_center = self.rect.center
+        self.image = rotated_image
+        self.rect = self.image.get_rect()
+        self.rect.center = old_center
+
+        # Update the mask after rotation
+        self.mask = pygame.mask.from_surface(self.image)
 
     def bump(self):
         self.speed = -SPEED
+        # Play wing sound
+        self.wing_sound.play()
+        # Optionally, set a specific tilt angle when flapping
+        self.angle = self.max_up_angle
+        rotated_image = pygame.transform.rotate(self.original_images[self.current_image], self.angle)
+        old_center = self.rect.center
+        self.image = rotated_image
+        self.rect = self.image.get_rect()
+        self.rect.center = old_center
+        self.mask = pygame.mask.from_surface(self.image)
 
     def begin(self):
-        self.current_image = (self.current_image + 1) % 3
-        self.image = self.images[self.current_image]
+        self.current_image = (self.current_image + 1) % len(self.original_images)
+        self.image = self.original_images[self.current_image]
+        self.mask = pygame.mask.from_surface(self.image)
+
 
 class Pipe(pygame.sprite.Sprite):
 
@@ -470,6 +502,7 @@ class Pipe(pygame.sprite.Sprite):
 
     def update(self):
         self.rect[0] -= GAME_SPEED
+
 
 class Ground(pygame.sprite.Sprite):
 
