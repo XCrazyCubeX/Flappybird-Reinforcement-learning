@@ -132,54 +132,65 @@ class FlappyBird(gym.Env):
     # Previous actions
     ##################################################
     def _get_observation(self):
-
         # Current bird position
         bird_x = self.bird.rect[0]
 
         # Current distance to pipe
-        # Using the first pipe of the group
-        # Calculating with distance to pipe - bird_x
         min_distance_to_pipe = float("inf")
         for pipe in self.pipe_group:
             distance_to_pipe = pipe.rect[0] - bird_x
             if 0 < distance_to_pipe < min_distance_to_pipe:
                 min_distance_to_pipe = distance_to_pipe
 
-        # Calculate top of bottom pipe
-        # Calculate bottom of top pipe
-        if self.pipe_group:
-            upper_pipe = self.pipe_group.sprites()[1]
-            lower_pipe = self.pipe_group.sprites()[0]
-            self.pipe_top_y = upper_pipe.rect[1] + upper_pipe.rect[3]
-            self.pipe_lower_y = lower_pipe.rect[1]
+        # Check if pipe_group has enough pipes
+        if self.pipe_group and len(self.pipe_group.sprites()) >= 2:
+            lower_pipe = None
+            upper_pipe = None
+
+            # Sort pipes based on their position to ensure correct assignment
+            pipes = sorted(self.pipe_group.sprites(), key=lambda p: p.rect.x)
+            for pipe in pipes:
+                if pipe.rect.right >= self.bird.rect.left:
+                    if not pipe.inverted and lower_pipe is None:
+                        lower_pipe = pipe
+                    elif pipe.inverted and upper_pipe is None:
+                        upper_pipe = pipe
+                    if lower_pipe and upper_pipe:
+                        break
+
+            if lower_pipe and upper_pipe:
+                self.pipe_top_y = upper_pipe.rect.bottom
+                self.pipe_lower_y = lower_pipe.rect.top
+            else:
+                # Default values if pipes are not found
+                self.pipe_top_y = SCREEN_HEIGHT
+                self.pipe_lower_y = 0
+        else:
+            # Default values if pipe_group is empty or has fewer than 2 pipes
+            self.pipe_top_y = SCREEN_HEIGHT
+            self.pipe_lower_y = 0
 
         # Observations
-        # Velocity of the bird
         velocity = self.bird.speed
         distance_to_ceiling = self.bird.rect.top
         distance_to_floor = SCREEN_HEIGHT - GROUND_HEIGHT - self.bird.rect.bottom
+
         # Vertical distance to top of lower pipe
         self.v_distance_lower_y = self.pipe_lower_y - self.bird.rect.bottom
 
-        # Calculate y distance to center gap
-        # First calculate center y of 2 pipes
-        # Then pipe y - bird_y
-        lower_pipe_bottom_y = self.pipe_group.sprites()[0].rect.bottom
-        upper_pipe_top_y = self.pipe_group.sprites()[1].rect.top
-        pipe_gap_middle_y = (lower_pipe_bottom_y + upper_pipe_top_y) / 2
-
         # Calculate x distance to center gap
-        # First calculate center x of pipe
-        # Then pipe x - bird_x
-        left_pipe_right_x = self.pipe_group.sprites()[0].rect.right
-        right_pipe_left_x = self.pipe_group.sprites()[1].rect.left
-        pipe_gap_middle_x = (left_pipe_right_x + right_pipe_left_x) / 2
+        pipe_gap_middle_x = min_distance_to_pipe + bird_x
 
         self.x_distance_to_gap = pipe_gap_middle_x - bird_x
 
         # Combine all observations in one array
-        observation = np.array([self.v_distance_lower_y, self.x_distance_to_gap,
-                                velocity, distance_to_floor, distance_to_ceiling])
+        observation = np.array([
+            self.v_distance_lower_y,
+            self.x_distance_to_gap,
+            velocity,
+            distance_to_floor,
+            distance_to_ceiling
+        ])
 
         return observation
 
@@ -284,7 +295,7 @@ class FlappyBird(gym.Env):
 
         # Set game ticks per second
         pygame.display.update()
-        self.clock.tick(100)  # Adjust FPS as needed
+        self.clock.tick(60)  # Adjust FPS as needed
 
     def draw_score(self):
         # Convert score to string
@@ -333,16 +344,45 @@ class FlappyBird(gym.Env):
         # Small positive reward for each timestep the bird is alive
         reward += 1
 
+        # Proximity Reward: Reward for being close to the center of the gap
+        # Ensure that pipe_gap_middle_y is available
+        if hasattr(self, 'pipe_gap_middle_y'):
+            distance_to_center = abs(self.bird.rect.centery - self.pipe_gap_middle_y)
+            normalized_distance = distance_to_center / (PIPE_GAP / 2)  # Normalize to [0, 2]
+
+            # Calculate proximity reward using a linear approach
+            # Closer to center yields higher reward
+            # When normalized_distance = 0 -> reward += 2
+            # When normalized_distance = 2 -> reward += 0
+            proximity_reward = max(0, 2 - normalized_distance)
+            reward += proximity_reward
+
+            # Optionally, you can use a non-linear function like exponential decay
+            # proximity_reward = np.exp(- (distance_to_center ** 2) / (2 * (PIPE_GAP / 4) ** 2))
+            # reward += proximity_reward * 2  # Scaling factor
+
         # Reward for passing a pipe pair
         for pipe in self.pipe_group:
             if not pipe.inverted and not hasattr(pipe, 'passed') and pipe.rect.right < self.bird.rect.left:
                 setattr(pipe, 'passed', True)
-                reward += 10  # Reward for passing a pipe pair
-                self.point_sound.play()  # Play point sound
-                print("Point sound played")  # Debugging line
                 self.pipes_passed += 1  # Increment the score
 
-                # Increase rewards for passing pipes after a certain number
+                # Base reward for passing a pipe pair
+                reward += 10
+
+                # Additional reward based on proximity when passing
+                if hasattr(self, 'pipe_gap_middle_y'):
+                    distance_to_center = abs(self.bird.rect.centery - self.pipe_gap_middle_y)
+                    normalized_distance = distance_to_center / (PIPE_GAP / 2)
+                    proximity_bonus = max(0, 2 - normalized_distance)  # Same as proximity_reward
+                    reward += proximity_bonus  # Additional reward
+                    print("Proximity bonus added:", proximity_bonus)
+
+                # Play point sound
+                self.point_sound.play()
+                print("Point sound played")  # Debugging line
+
+                # Incremental rewards based on the number of pipes passed
                 if self.pipes_passed > 100:
                     reward += 20  # Higher reward after 100 pipes passed
                 elif self.pipes_passed > 50:
